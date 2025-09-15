@@ -1,0 +1,233 @@
+package com.zettix.service;
+
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.EncodeHintType;
+import com.google.zxing.WriterException;
+import com.google.zxing.client.j2se.MatrixToImageWriter;
+import com.google.zxing.common.BitMatrix;
+import com.google.zxing.qrcode.QRCodeWriter;
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Base64;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class VietQRService {
+
+    @Value("${vietqr.bank-code}")
+    private String bankCode;
+
+    @Value("${vietqr.account-number}")
+    private String accountNumber;
+
+    @Value("${vietqr.account-name}")
+    private String accountName;
+
+    @Value("${vietqr.template}")
+    private String template;
+
+    @Value("${vietqr.qr-width}")
+    private int qrWidth;
+
+    @Value("${vietqr.qr-height}")
+    private int qrHeight;
+
+    @Value("${business.qr-expiration-minutes}")
+    private int qrExpirationMinutes;
+
+    public VietQRResponse generateQRCode(BigDecimal amount, String referenceId) {
+        try {
+            log.info("Generating VietQR code for amount: {}, referenceId: {}", amount, referenceId);
+            
+            String qrData = buildVietQRData(amount, referenceId);
+            log.info("Generated QR data: {}", qrData);
+            
+            String qrCodeBase64 = generateQRCodeImage(qrData);
+            log.info("Generated QR code image, size: {} bytes", qrCodeBase64.length());
+            
+            LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(qrExpirationMinutes);
+
+            VietQRResponse response = VietQRResponse.builder()
+                    .qrData(qrData)
+                    .qrCodeBase64(qrCodeBase64)
+                    .amount(amount)
+                    .referenceId(referenceId)
+                    .accountNumber(accountNumber)
+                    .accountName(accountName)
+                    .bankCode(bankCode)
+                    .expiresAt(expiresAt)
+                    .build();
+                    
+            log.info("Successfully generated VietQR response");
+            return response;
+
+        } catch (Exception e) {
+            log.error("Error generating VietQR code: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to generate QR code", e);
+        }
+    }
+
+    private String buildVietQRData(BigDecimal amount, String referenceId) {
+        // VietQR format đơn giản - tương thích với MoMo và các app ngân hàng
+        // Format: bankCode|accountNumber|amount|description|referenceId
+        
+        try {
+            String description = String.format("NAP TIEN ZETTIX - %s", referenceId);
+            
+            // Validate input
+            if (bankCode == null || bankCode.isEmpty()) {
+                throw new IllegalArgumentException("Bank code cannot be null or empty");
+            }
+            if (accountNumber == null || accountNumber.isEmpty()) {
+                throw new IllegalArgumentException("Account number cannot be null or empty");
+            }
+            if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new IllegalArgumentException("Amount must be greater than 0");
+            }
+            if (referenceId == null || referenceId.isEmpty()) {
+                throw new IllegalArgumentException("Reference ID cannot be null or empty");
+            }
+            
+            String qrData = String.format("%s|%s|%s|%s|%s",
+                    bankCode,
+                    accountNumber,
+                    amount.toPlainString(),
+                    description,
+                    referenceId
+            );
+            
+            log.debug("Generated VietQR data: {}", qrData);
+            return qrData;
+            
+        } catch (Exception e) {
+            log.error("Error building VietQR data: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to build VietQR data", e);
+        }
+    }
+    
+    private String calculateCRC16(String data) {
+        int crc = 0xFFFF;
+        for (int i = 0; i < data.length(); i++) {
+            crc ^= (data.charAt(i) & 0xFF);
+            for (int j = 0; j < 8; j++) {
+                if ((crc & 1) != 0) {
+                    crc = (crc >> 1) ^ 0x8408;
+                } else {
+                    crc = crc >> 1;
+                }
+            }
+        }
+        return String.format("%04X", crc ^ 0xFFFF);
+    }
+    
+
+    private String generateQRCodeImage(String qrData) throws WriterException, IOException {
+        try {
+            log.debug("Generating QR code image for data: {}", qrData);
+            
+            if (qrData == null || qrData.isEmpty()) {
+                throw new IllegalArgumentException("QR data cannot be null or empty");
+            }
+            
+            QRCodeWriter qrCodeWriter = new QRCodeWriter();
+            
+            Map<EncodeHintType, Object> hints = new HashMap<>();
+            hints.put(EncodeHintType.ERROR_CORRECTION, ErrorCorrectionLevel.M);
+            hints.put(EncodeHintType.CHARACTER_SET, StandardCharsets.UTF_8.name());
+            hints.put(EncodeHintType.MARGIN, 1);
+
+            log.debug("Encoding QR code with size: {}x{}", qrWidth, qrHeight);
+            BitMatrix bitMatrix = qrCodeWriter.encode(qrData, BarcodeFormat.QR_CODE, qrWidth, qrHeight, hints);
+            log.debug("QR code encoded successfully");
+
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            MatrixToImageWriter.writeToStream(bitMatrix, "PNG", outputStream);
+            
+            byte[] imageBytes = outputStream.toByteArray();
+            log.debug("QR code image generated, size: {} bytes", imageBytes.length);
+            
+            if (imageBytes.length == 0) {
+                throw new RuntimeException("Generated QR code image is empty");
+            }
+            
+            String base64 = Base64.getEncoder().encodeToString(imageBytes);
+            log.debug("QR code base64 generated, length: {}", base64.length());
+            
+            return base64;
+            
+        } catch (WriterException e) {
+            log.error("WriterException while generating QR code: {}", e.getMessage(), e);
+            throw e;
+        } catch (IOException e) {
+            log.error("IOException while generating QR code: {}", e.getMessage(), e);
+            throw e;
+        } catch (Exception e) {
+            log.error("Unexpected error while generating QR code: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to generate QR code image", e);
+        }
+    }
+
+    public String generateReferenceId() {
+        return "ZETTIX_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+    }
+
+    public boolean validateQRData(String qrData, BigDecimal expectedAmount, String expectedReferenceId) {
+        try {
+            // Parse simple VietQR format: bankCode|accountNumber|amount|description|referenceId
+            if (qrData == null || qrData.isEmpty()) {
+                log.warn("QR data is null or empty");
+                return false;
+            }
+            
+            String[] parts = qrData.split("\\|");
+            if (parts.length < 5) {
+                log.warn("Invalid QR data format, expected 5 parts but got: {}", parts.length);
+                return false;
+            }
+
+            String qrBankCode = parts[0];
+            String qrAccountNumber = parts[1];
+            String qrAmount = parts[2];
+            String qrReferenceId = parts[4];
+
+            boolean isValid = bankCode.equals(qrBankCode) &&
+                   accountNumber.equals(qrAccountNumber) &&
+                   expectedAmount.toPlainString().equals(qrAmount) &&
+                   expectedReferenceId.equals(qrReferenceId);
+                   
+            log.debug("QR validation result: {} for data: {}", isValid, qrData);
+            return isValid;
+
+        } catch (Exception e) {
+            log.error("Error validating QR data: {}", e.getMessage(), e);
+            return false;
+        }
+    }
+
+    @lombok.Data
+    @lombok.Builder
+    public static class VietQRResponse {
+        private String qrData;
+        private String qrCodeBase64;
+        private BigDecimal amount;
+        private String referenceId;
+        private String accountNumber;
+        private String accountName;
+        private String bankCode;
+        private LocalDateTime expiresAt;
+    }
+}

@@ -1,0 +1,101 @@
+server:
+  port: 8083
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: zettix-backend
+  
+  datasource:
+    url: jdbc:mysql://localhost:3306/zettix_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: root
+    password: 1111
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
+        format_sql: true
+        
+  security:
+    user:
+      name: admin
+      password: ${ADMIN_PASSWORD:admin123}
+      
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${GMAIL_USERNAME:your-email@gmail.com}
+    password: ${GMAIL_APP_PASSWORD:your-app-password}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            
+  quartz:
+    job-store-type: memory
+    properties:
+      org:
+        quartz:
+          scheduler:
+            instanceName: ZettixScheduler
+            instanceId: AUTO
+          threadPool:
+            class: org.quartz.simpl.SimpleThreadPool
+            threadCount: 10
+            threadPriority: 5
+            threadsInheritContextClassLoaderOfInitializingThread: true
+
+# JWT Configuration
+jwt:
+  secret: ${JWT_SECRET:mySecretKey123456789012345678901234567890}
+  expiration: 86400000 # 24 hours in milliseconds
+
+# VietQR Configuration
+vietqr:
+  bank-code: 970436
+  account-number: 9889559357
+  account-name: NGUYEN VAN HOANG
+  template: compact2
+  qr-width: 200
+  qr-height: 200
+
+# Gmail API Configuration
+gmail:
+  credentials-file: ${GMAIL_CREDENTIALS_FILE:./gmail-credentials.json}
+  tokens-directory: ${GMAIL_TOKENS_DIR:./tokens}
+  application-name: Zettix Backend
+  scopes:
+    - https://www.googleapis.com/auth/gmail.readonly
+
+# Business Configuration
+business:
+  qr-expiration-minutes: 30
+  min-deposit-amount: 10000
+  max-deposit-amount: 10000000
+  transaction-timeout-minutes: 60
+
+logging:
+  level:
+    com.zettix: DEBUG
+    org.springframework.security: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+
+# Swagger/OpenAPI Configuration
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+    tagsSorter: alpha
+    tryItOutEnabled: true
+  show-actuator: true

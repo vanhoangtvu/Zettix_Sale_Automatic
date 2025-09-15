@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: zettix-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-password}
+      MYSQL_DATABASE: zettix_db
+      MYSQL_USER: ${DB_USERNAME:-root}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-password}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - zettix-network
+
+  backend:
+    build: .
+    container_name: zettix-backend
+    environment:
+      DB_USERNAME: ${DB_USERNAME:-root}
+      DB_PASSWORD: ${DB_PASSWORD:-password}
+      JWT_SECRET: ${JWT_SECRET:-mySecretKey123456789012345678901234567890}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      GMAIL_USERNAME: ${GMAIL_USERNAME:-your-email@gmail.com}
+      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD:-your-app-password}
+      GMAIL_CREDENTIALS_FILE: /app/gmail-credentials.json
+      GMAIL_TOKENS_DIR: /app/tokens
+    ports:
+      - "8083:8083"
+    volumes:
+      - ./gmail-credentials.json:/app/gmail-credentials.json:ro
+      - ./tokens:/app/tokens
+    depends_on:
+      - mysql
+    networks:
+      - zettix-network
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+
+networks:
+  zettix-network:
+    driver: bridge
